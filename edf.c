@@ -17,12 +17,18 @@
 struct rt_info * sched_edf(struct list_head *head, int flags)
 {
 	struct rt_info * best = local_task(head->next);
+	struct rt_info * um = local_task(head->next);
 
-    struct list_head * node;
-    list_for_each(node, head) {
-        struct rt_info * current = local_task(node);
-        if (current->deadline < best->deadline) best = current;
-    }
+	struct list_head * node;
+	list_for_each(node, head) {
+		int secdiff;
+
+		um = local_task(node);
+		secdiff = um->deadline.tv_sec - best->deadline.tv_sec;
+		if (secdiff < 0) best = um;
+		else if (secdiff == 0 &&
+			 um->deadline.tv_nsec - best->deadline.tv_nsec < 0) best = um;
+	}
 
 	//if(flags & SCHED_FLAG_PI)
 	//	best = get_pi_task(best, head, flags);
