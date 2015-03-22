@@ -14,12 +14,18 @@
 #include <linux/chronos_sched.h>
 #include <linux/list.h>
 
-struct rt_info* sched_edf(struct list_head *head, int flags)
+struct rt_info * sched_edf(struct list_head *head, int flags)
 {
-	struct rt_info *best = local_task(head->next);
+	struct rt_info * best = local_task(head->next);
 
-	if(flags & SCHED_FLAG_PI)
-		best = get_pi_task(best, head, flags);
+    struct list_head * node;
+    list_for_each(node, head) {
+        struct rt_info * current = local_task(node);
+        if (current->deadline < best->deadline) best = current;
+    }
+
+	//if(flags & SCHED_FLAG_PI)
+	//	best = get_pi_task(best, head, flags);
 
 	return best;
 }
