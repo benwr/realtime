@@ -61,13 +61,14 @@ struct rt_info* sched_dasa_nd(struct list_head *head, int flags)
 		initialize_lists(it);
 
 		// add it to density list
-		list_add_after(&density_list, it, DENSITY_LIST);
+		//list_add_after(&density_list, it, DENSITY_LIST);
+		insert_on_list(it, &density_list, DENSITY_LIST, SORT_KEY_LVD, 1);
 	}
 
 	// quicksort tasks by IVD
-	quicksort(&density_list,
-			DENSITY_LIST, 
-			SORT_KEY_LVD, 1);
+	//quicksort(&density_list,
+			//DENSITY_LIST, 
+			//SORT_KEY_LVD, 1);
 
 	// for each task, by value density
 	list_for_each_entry(it, &(density_list.task_list[DENSITY_LIST]), task_list[DENSITY_LIST]) {
@@ -80,12 +81,19 @@ struct rt_info* sched_dasa_nd(struct list_head *head, int flags)
 			list_remove(it, SCHEDULE_LIST);
 	}
 
-	// return first task in schedule
-	// (or if something went wrong just return the first thing in the queue)
-	if (!list_empty(&(schedule.task_list[SCHEDULE_LIST])))
-		return list_first_entry(&(schedule.task_list[SCHEDULE_LIST]), struct rt_info, task_list[SCHEDULE_LIST]);
+	// If we ended up with an empty schedule, it means that
+	// there are no feasible schedules, but nothing has yet blown
+	// a deadline. Fall back to the highest-value-density task.
+	// Otherwise, do what DASA is supposed to do (return the first
+	// thing in the schedule)
+	if (list_empty(&(schedule.task_list[SCHEDULE_LIST])))
+		return list_first_entry(&(density_list.task_list[DENSITY_LIST]),
+					struct rt_info,
+					 task_list[DENSITY_LIST]);
 	else
-		return list_first_entry(head, struct rt_info, task_list[LOCAL_LIST]);
+		return list_first_entry(&(schedule.task_list[SCHEDULE_LIST]),
+					struct rt_info,
+					task_list[SCHEDULE_LIST]);
 
 }
 
