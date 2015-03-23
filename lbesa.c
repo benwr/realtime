@@ -1,6 +1,6 @@
-/* chronos/rma.c
+/* chronos/lbesa.c
  *
- * RMA Single-Core Scheduler Module for ChronOS
+ * LBESA Single-Core Scheduler Module for ChronOS
  *
  * Author(s)
  *	- Matthew Dellinger, mdelling@vt.edu
@@ -13,7 +13,7 @@
 #include <linux/chronos_sched.h>
 #include <linux/list.h>
 
-struct rt_info* sched_rma(struct list_head *head, int flags)
+struct rt_info* sched_lbesa(struct list_head *head, int flags)
 {
 	struct rt_info *best = local_task(head->next);
 
@@ -23,28 +23,28 @@ struct rt_info* sched_rma(struct list_head *head, int flags)
 	return best;
 }
 
-struct rt_sched_local rma = {
-	.base.name = "RMA",
-	.base.id = SCHED_RT_RMA,
+struct rt_sched_local lbesa = {
+	.base.name = "LBESA",
+	.base.id = SCHED_RT_LBESA,
 	.flags = 0,
-	.schedule = sched_rma,
+	.schedule = sched_lbesa,
 	.base.sort_key = SORT_KEY_PERIOD,
-	.base.list = LIST_HEAD_INIT(rma.base.list)
+	.base.list = LIST_HEAD_INIT(lbesa.base.list)
 };
 
-static int __init rma_init(void)
+static int __init lbesa_init(void)
 {
-	return add_local_scheduler(&rma);
+	return add_local_scheduler(&lbesa);
 }
-module_init(rma_init);
+module_init(lbesa_init);
 
-static void __exit rma_exit(void)
+static void __exit lbesa_exit(void)
 {
-	remove_local_scheduler(&rma);
+	remove_local_scheduler(&lbesa);
 }
-module_exit(rma_exit);
+module_exit(lbesa_exit);
 
-MODULE_DESCRIPTION("RMA Single-Core Scheduling Module for ChronOS");
+MODULE_DESCRIPTION("LBESA Single-Core Scheduling Module for ChronOS");
 MODULE_AUTHOR("Matthew Dellinger <matthew@mdelling.com>");
 MODULE_LICENSE("GPL");
 

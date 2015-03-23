@@ -16,8 +16,8 @@
 
 struct rt_info * sched_edf(struct list_head *head, int flags)
 {
-	struct rt_info * best = local_task(head->next);
-	struct rt_info * um = local_task(head->next);
+	struct rt_info * best = local_task(head);
+	struct rt_info * um = local_task(head);
 
 	struct list_head * node;
 	list_for_each(node, head) {
@@ -58,6 +58,6 @@ static void __exit edf_exit(void)
 module_exit(edf_exit);
 
 MODULE_DESCRIPTION("EDF Single-Core Scheduling Module for ChronOS");
-MODULE_AUTHOR("Matthew Dellinger <matthew@mdelling.com>");
+MODULE_AUTHOR("Ben Weinstein-Raun <b@w-r.me>");
 MODULE_LICENSE("GPL");
 
