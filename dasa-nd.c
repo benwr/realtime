@@ -14,6 +14,16 @@
 #include <linux/chronos_sched.h>
 #include <linux/list.h>
 
+static inline int schedule_feasible(struct list_head * head, int i) {
+	struct rt_info * it;
+	struct timespec exec_ts = CURRENT_TIME;
+	list_for_each_entry(it, head, task_list[i]) {
+		add_ts(&exec_ts, &(it->left), &exec_ts);
+		if (earlier_deadline(&(it->deadline), &exec_ts)) return 0;
+	}
+	return 1;
+}
+
 struct rt_info* sched_dasa_nd(struct list_head *head, int flags)
 {
 	const int DENSITY_LIST = SCHED_LIST1;
@@ -27,7 +37,11 @@ struct rt_info* sched_dasa_nd(struct list_head *head, int flags)
 
 	struct rt_info * it;
 
-	struct timespec t1;
+	struct list_head * lit;
+
+	long ivd;
+	
+	struct timespec * t1;
 
 	INIT_LIST_HEAD(&(density_list.task_list[DENSITY_LIST]));
 	INIT_LIST_HEAD(&(schedule.task_list[SCHEDULE_LIST]));
@@ -35,23 +49,11 @@ struct rt_info* sched_dasa_nd(struct list_head *head, int flags)
 	// for each task in ready tasks,
 	list_for_each_entry(it, head, task_list[LOCAL_LIST]) {
 		// if a task is aborted, return it
-		if (check_task_aborted(it)) return it;
-
-		t1 = current_kernel_time();
-
-		// if a task has blown its deadline,
-		if (earlier_deadline(&(it->deadline), &t1)) {
-			// abort it and return it
-			abort_thread(it);
-			return it;
-		}
+		if (check_task_failure(it, flags)) return it;
 
 		// The following call required adding an EXPORT_SYMBOL()
 		// even though it was non-static and had public prototypes.
 		// This probably won't work in stock ChronOS.
-
-		// compute task's remaining time
-		update_left(it);
 
 		// compute task's IVD
 		livd(it, 0, flags);
@@ -60,9 +62,21 @@ struct rt_info* sched_dasa_nd(struct list_head *head, int flags)
 		// initialize list heads
 		initialize_lists(it);
 
-		// add it to density list
+		// add it to density list at the appropriate IVD
 		//list_add_after(&density_list, it, DENSITY_LIST);
-		insert_on_list(it, &density_list, DENSITY_LIST, SORT_KEY_LVD, 1);
+		//insert_on_list(it, &density_list, DENSITY_LIST, SORT_KEY_LVD, 1);
+		ivd = it->local_ivd;
+		lit = &(density_list.task_list[DENSITY_LIST]);
+		while (!list_is_last(lit, &(density_list.task_list[DENSITY_LIST]))) {
+			if (list_first_entry(lit,
+				struct rt_info,
+				task_list[DENSITY_LIST]
+				)->local_ivd > ivd)
+				break;
+			lit = lit->next;
+		}
+		list_add(&(it->task_list[DENSITY_LIST]), lit);
+		
 	}
 
 	// quicksort tasks by IVD
@@ -73,11 +87,22 @@ struct rt_info* sched_dasa_nd(struct list_head *head, int flags)
 	// for each task, by value density
 	list_for_each_entry(it, &(density_list.task_list[DENSITY_LIST]), task_list[DENSITY_LIST]) {
 		// add it to the schedule, sorted by deadline
-		insert_on_list(it, &schedule, SCHEDULE_LIST, SORT_KEY_DEADLINE, 1);
+		//insert_on_list(it, &schedule, SCHEDULE_LIST, SORT_KEY_DEADLINE, 1);
+		t1 = &(it->deadline);
+		lit = &(schedule.task_list[SCHEDULE_LIST]);
+		while (!list_is_last(lit, &(schedule.task_list[SCHEDULE_LIST]))) {
+			if (earlier_deadline(&(list_first_entry(lit,
+							struct rt_info,
+							task_list[SCHEDULE_LIST]
+							)->deadline), t1))
+				break;
+			lit = lit->next;
+		}
+		list_add(&(it->task_list[SCHEDULE_LIST]), lit);
 
 		// check to see if schedule is feasible and, if not, remove it.
 		// I think this one also required an EXPORT_SYMBOL.
-		if (!list_is_feasible(&schedule, SCHEDULE_LIST))
+		if (!schedule_feasible(&(schedule.task_list[SCHEDULE_LIST]), SCHEDULE_LIST))
 			list_remove(it, SCHEDULE_LIST);
 	}
 
