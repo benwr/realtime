@@ -80,9 +80,9 @@ struct rt_info* sched_lbesa(struct list_head *head, int flags)
 		list_remove(unworthy, SCHEDULE_LIST);
 	}
 
-	return list_first_entry(&schedule,
+	return list_first_entry(head,
 				struct rt_info,
-				task_list[SCHEDULE_LIST]);
+				task_list[LOCAL_LIST]);
 }
 
 struct rt_sched_local lbesa = {
