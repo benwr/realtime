@@ -12,7 +12,7 @@
 #include <linux/chronos_types.h>
 #include <linux/chronos_sched.h>
 #include <linux/list.h>
-#include <limits.h>
+//#include <limits.h>
 
 static inline int schedule_feasible(struct list_head * head, int i) {
 	struct rt_info * it;
@@ -50,8 +50,8 @@ struct rt_info* sched_lbesa(struct list_head *head, int flags)
 
 		// Insert into the schedule in EDF order
 		t1 = &it->deadline;
-		lit = schedule;
-		while (!list_is_last(lit, schedule)) {
+		lit = &schedule;
+		while (!list_is_last(lit, &schedule)) {
 			if (earlier_deadline(&(list_first_entry(
 					lit,
 					struct rt_info,
@@ -70,7 +70,7 @@ struct rt_info* sched_lbesa(struct list_head *head, int flags)
 						task_list[SCHEDULE_LIST]);
 		ivd = LONG_MIN;
 		unworthy = NULL;
-		list_for_each_entry(it, schedule, task_list[SCHEDULE_LIST]) {
+		list_for_each_entry(it, &schedule, task_list[SCHEDULE_LIST]) {
 			if (it->local_ivd >= ivd) {
 				ivd = it->local_ivd;
 				unworthy = it;
@@ -80,7 +80,7 @@ struct rt_info* sched_lbesa(struct list_head *head, int flags)
 		list_remove(unworthy, SCHEDULE_LIST);
 	}
 
-	return list_first_entry(&schedule
+	return list_first_entry(&schedule,
 				struct rt_info,
 				task_list[SCHEDULE_LIST]);
 }
