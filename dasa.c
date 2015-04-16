@@ -19,18 +19,18 @@ int task_cmp(void * arg, struct list_head * a, struct list_head * b) {
 	// Comparison function for list_sort
 	struct rt_info * a_task, * b_task;
 	int * field = (int *) arg;
-	struct timespec t1;
 
 	a_task = list_entry(a, struct rt_info, task_list[*field]);
 	b_task = list_entry(b, struct rt_info, task_list[*field]);
 
-	if (*field == SCHED_LIST1)
+	if (*field == SCHED_LIST1) {
 		return a_task->local_ivd - b_task->local_ivd;
-	else if (*field == SCHED_LIST3)
-		return compare_ts(a_task->temp_deadline, b_task->temp_deadline); // difference between temporary deadlines
+	} else if (*field == SCHED_LIST3) {
+		return compare_ts(&(a_task->temp_deadline), &(b_task->temp_deadline)); // difference between temporary deadlines
+	}
 
 	// assume field is SCHED_LIST2
-	return compare_ts(a_tas->deadline, b_task->deadline);// difference between deadlines
+	return compare_ts(&(a_task->deadline), &(b_task->deadline));// difference between deadlines
 }
 
 static inline void list_copy(struct list_head * a, int alist, struct list_head * b, int blist) {
@@ -61,7 +61,7 @@ static inline int schedule_feasible(struct list_head * head, int i) {
 	return 1;
 }
 
-static inline int struct rt_info * first_dep(struct rt_info * task) {
+static inline struct rt_info * first_dep(struct rt_info * task) {
 	if (task->requested_resource == NULL) return NULL;
 	else return task->requested_resource->owner_t;
 }
@@ -77,8 +77,8 @@ static inline bool mark_deps_and_deadlocks(struct rt_info * task) {
 
 	it = task;
 
-	while (it->dep != NULL && task_check_flag(it, MARKED)) {
-		task_clear_flag(next, MARKED);
+	while (it != NULL && task_check_flag(it, MARKED)) {
+		task_clear_flag(it, MARKED);
 		it = it->dep;
 	}
 
@@ -90,7 +90,7 @@ static void compute_dep_tentative_deadlines(struct rt_info * task) {
 	task->temp_deadline = task->deadline;
 
 	while ((task = first_dep(task))) {
-		if (compare_ts(task->deadline, earliest) < 0) {
+		if (compare_ts(&(task->deadline), &earliest) < 0) {
 			earliest = task->deadline;
 		}
 		task->temp_deadline = earliest;
@@ -106,11 +106,6 @@ struct rt_info* sched_dasa(struct list_head *head, int flags)
 	struct list_head density_list, schedule, tentative;
 
 	struct rt_info * it, * task;
-	struct rt_info * next;
-
-	struct list_head * lit;
-
-	struct timespec * t1;
 
 	INIT_LIST_HEAD(&density_list);
 	INIT_LIST_HEAD(&schedule);
@@ -205,4 +200,3 @@ module_exit(dasa_exit);
 MODULE_DESCRIPTION("DASA Single-Core Scheduling Module for ChronOS");
 MODULE_AUTHOR("Ben Weinstein-Raun <b@w-r.me>");
 MODULE_LICENSE("GPL");
-
