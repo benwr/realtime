@@ -15,9 +15,40 @@
 #include <linux/list.h>
 #include <linux/list_sort.h>
 
-int task_cmp(void * field, struct list_head * a, struct list_head * b) {
+int task_cmp(void * arg, struct list_head * a, struct list_head * b) {
 	// Comparison function for list_sort
-	return 0;
+	struct rt_info * a_task, * b_task;
+	int * field = (int *) arg;
+	struct timespec t1;
+
+	a_task = list_entry(a, struct rt_info, task_list[*field]);
+	b_task = list_entry(b, struct rt_info, task_list[*field]);
+
+	if (*field == SCHED_LIST1)
+		return a_task->local_ivd - b_task->local_ivd;
+	else if (*field == SCHED_LIST3)
+		return compare_ts(a_task->temp_deadline, b_task->temp_deadline); // difference between temporary deadlines
+
+	// assume field is SCHED_LIST2
+	return compare_ts(a_tas->deadline, b_task->deadline);// difference between deadlines
+}
+
+static inline void list_copy(struct list_head * a, int alist, struct list_head * b, int blist) {
+	struct list_head * astart, * bstart;
+
+	astart = a;
+	bstart = b;
+	
+	while (a->next != astart) {
+		// set b->next and b->next->prevb
+		b->next = &(list_entry(a->next, struct rt_info, task_list[alist])->task_list[blist]);
+		list_entry(a->next, struct rt_info, task_list[alist])->task_list[blist].prev = b;
+		a = a->next;
+		b = b->next;
+	}
+
+	b->next = bstart;
+	bstart->prev = b;
 }
 
 static inline int schedule_feasible(struct list_head * head, int i) {
@@ -30,88 +61,110 @@ static inline int schedule_feasible(struct list_head * head, int i) {
 	return 1;
 }
 
+static inline int struct rt_info * first_dep(struct rt_info * task) {
+	if (task->requested_resource == NULL) return NULL;
+	else return task->requested_resource->owner_t;
+}
+
+static inline bool mark_deps_and_deadlocks(struct rt_info * task) {
+	struct rt_info * it = task;
+	while ((it->dep = first_dep(it)) != NULL && !task_check_flag(it, DEADLOCKED)) {
+		if (task_check_flag(it, MARKED))
+			task_set_flag(task, DEADLOCKED);
+		task_set_flag(it, MARKED);
+		it = it->dep;
+	}
+
+	it = task;
+
+	while (it->dep != NULL && task_check_flag(it, MARKED)) {
+		task_clear_flag(next, MARKED);
+		it = it->dep;
+	}
+
+	return task_check_flag(it, DEADLOCKED);
+}
+
+static void compute_dep_tentative_deadlines(struct rt_info * task) {
+	struct timespec earliest = task->deadline;
+	task->temp_deadline = task->deadline;
+
+	while ((task = first_dep(task))) {
+		if (compare_ts(task->deadline, earliest) < 0) {
+			earliest = task->deadline;
+		}
+		task->temp_deadline = earliest;
+	}
+}
+
 struct rt_info* sched_dasa(struct list_head *head, int flags)
 {
-	const int DENSITY_LIST = SCHED_LIST1;
-	const int SCHEDULE_LIST = SCHED_LIST2;
+	int DENSITY_LIST = SCHED_LIST1;
+	int SCHEDULE_LIST = SCHED_LIST2;
+	int TENTATIVE_LIST = SCHED_LIST3;
 	
-	// ChronOS seems to want to do everything to an rt_info* rather
-	// than the direct list_heads, while list.h expects a dummy list
-	// node to act as the head.
-	struct list_head density_list;
-	struct list_head schedule;
+	struct list_head density_list, schedule, tentative;
 
-	struct rt_info * it;
+	struct rt_info * it, * task;
+	struct rt_info * next;
 
 	struct list_head * lit;
 
-	long ivd;
-	
 	struct timespec * t1;
 
 	INIT_LIST_HEAD(&density_list);
 	INIT_LIST_HEAD(&schedule);
+	INIT_LIST_HEAD(&tentative);
 
 	// for each task in ready tasks,
 	list_for_each_entry(it, head, task_list[LOCAL_LIST]) {
-		// if a task is aborted, return it
+		// compute dependency list
+		// and check for deadlocks (setting DEADLOCKED flag; livd knows what to do with that)
+		mark_deps_and_deadlocks(it);
+
+		// compute task's LIVD, aborting deadlocks
+		livd(it, true, flags);
+	}
+
+	list_for_each_entry(it, head, task_list[LOCAL_LIST]) {
+		// if a task is aborted or failed, return it so it can finish aborting
 		if (check_task_failure(it, flags)) return it;
 
-		// The following call required adding an EXPORT_SYMBOL()
-		// even though it was non-static and had public prototypes.
-		// This probably won't work in stock ChronOS.
-
-		// compute task's IVD
-		livd(it, 0, flags);
-
-		
 		// initialize list heads
 		initialize_lists(it);
 
 		// add it to density list
-		//list_add_after(&density_list, it, DENSITY_LIST);
-		//insert_on_list(it, &density_list, DENSITY_LIST, SORT_KEY_LVD, 1);
-		ivd = it->local_ivd;
-		lit = &density_list;
-		while (!list_is_last(lit, &density_list)) {
-			if (list_first_entry(lit,
-				struct rt_info,
-				task_list[DENSITY_LIST]
-				)->local_ivd > ivd)
-				break;
-			lit = lit->next;
-		}
-		list_add(&(it->task_list[DENSITY_LIST]), lit);
-		
+		list_add(&(it->task_list[DENSITY_LIST]), &density_list);
 	}
 
-	// quicksort tasks by IVD
-	//quicksort(&density_list,
-			//DENSITY_LIST, 
-			//SORT_KEY_LVD, 1);
+	// sort tasks by descending VD
+	list_sort(&DENSITY_LIST, &density_list, task_cmp);
 
 	// for each task, by value density
 	list_for_each_entry(it, &density_list, task_list[DENSITY_LIST]) {
-		// add it to the schedule, sorted by deadline
-		//insert_on_list(it, &schedule, SCHEDULE_LIST, SORT_KEY_DEADLINE, 1);
-		t1 = &(it->deadline);
-		lit = &schedule;
-		while (!list_is_last(lit, &schedule)) {
-			if (earlier_deadline(&(list_first_entry(lit,
-							struct rt_info,
-							task_list[SCHEDULE_LIST]
-							)->deadline), t1))
-				break;
-			lit = lit->next;
+		// make a tentative copy of the schedule
+		list_copy(&schedule, SCHEDULE_LIST, &tentative, TENTATIVE_LIST);
+
+		// compute tentative deadlines (deadline tightening)
+		compute_dep_tentative_deadlines(it);
+
+		// add task and its dependents to tentative list, in
+		// deadline/dependency-order
+		for (task = it; task != NULL; task = first_dep(task)) {
+			list_del_init(&(it->task_list[TENTATIVE_LIST]));
+			list_add(&(it->task_list[TENTATIVE_LIST]), &tentative);
 		}
-		list_add(&(it->task_list[SCHEDULE_LIST]), lit);
 
-		// check to see if schedule is feasible and, if not, remove it.
-		// I think this one also required an EXPORT_SYMBOL.
-		if (!schedule_feasible(&schedule, SCHEDULE_LIST))
-			list_remove(it, SCHEDULE_LIST);
+		list_sort(&TENTATIVE_LIST, &tentative, task_cmp);
+		
+		// if the tentative schedule is feasible, copy it to the final schedule
+		if (schedule_feasible(&tentative, TENTATIVE_LIST)) {
+			list_copy(&tentative, TENTATIVE_LIST, &schedule, SCHEDULE_LIST);
+			list_sort(&SCHEDULE_LIST, &schedule, task_cmp);
+		}
+
 	}
-
+	
 	// If we ended up with an empty schedule, it means that
 	// there are no feasible schedules, but nothing has yet blown
 	// a deadline. Fall back to the highest-value-density task.
