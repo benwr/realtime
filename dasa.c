@@ -33,47 +33,67 @@ int task_cmp(void * arg, struct list_head * a, struct list_head * b) {
 	return compare_ts(&(a_task->deadline), &(b_task->deadline));// difference between deadlines
 }
 
-static inline void list_copy(struct list_head * a, int alist, struct list_head * b, int blist) {
+void list_copy(struct list_head * a, int alist, struct list_head * b, int blist) {
 	struct list_head * astart, * bstart;
+	printk("copying list\n");
 
 	astart = a;
 	bstart = b;
 	
 	while (a->next != astart) {
 		// set b->next and b->next->prevb
+		printk("pointing b->next at a->next->b\n");
 		b->next = &(list_entry(a->next, struct rt_info, task_list[alist])->task_list[blist]);
+		printk("pointing a->next->b->prev at b\n");
 		list_entry(a->next, struct rt_info, task_list[alist])->task_list[blist].prev = b;
 		a = a->next;
 		b = b->next;
 	}
+	printk("closing loop\n");
 
 	b->next = bstart;
 	bstart->prev = b;
+	printk("finished list copy\n");
 }
 
-static inline int schedule_feasible(struct list_head * head, int i) {
+int schedule_feasible(struct list_head * head, int i) {
+	printk("checking schedule feasibility\n");
 	struct rt_info * it;
 	struct timespec exec_ts = CURRENT_TIME;
 	list_for_each_entry(it, head, task_list[i]) {
 		add_ts(&exec_ts, &(it->left), &exec_ts);
-		if (earlier_deadline(&(it->deadline), &exec_ts)) return 0;
+		if (earlier_deadline(&(it->deadline), &exec_ts)) {
+			printk("schedule infeasible\n");
+			return 0;
+		}
 	}
+	printk("schedule feasible\n");
 	return 1;
 }
 
-static inline struct rt_info * first_dep(struct rt_info * task) {
-	if (task->requested_resource == NULL) return NULL;
-	else return task->requested_resource->owner_t;
+struct rt_info * first_dep(struct rt_info * task) {
+	printk("finding first task dependency\n");
+	if (task->requested_resource == NULL) {
+		printk("no dependency\n");
+		return NULL;
+	}
+	else {
+		printk("dependency found\n");
+		return task->requested_resource->owner_t;
+	}
 }
 
-static inline bool mark_deps_and_deadlocks(struct rt_info * task) {
-	struct rt_info * it = task;
+bool mark_deps_and_deadlocks(struct rt_info * task) {
+	printk("marking dependencies and deadlocks\n");
+	struct rt_info * it;
+	it = task;
 	while ((it->dep = first_dep(it)) != NULL && !task_check_flag(it, DEADLOCKED)) {
 		if (task_check_flag(it, MARKED))
 			task_set_flag(task, DEADLOCKED);
 		task_set_flag(it, MARKED);
 		it = it->dep;
 	}
+	printk("finished marking dependencies\n");
 
 	it = task;
 
@@ -81,12 +101,16 @@ static inline bool mark_deps_and_deadlocks(struct rt_info * task) {
 		task_clear_flag(it, MARKED);
 		it = it->dep;
 	}
+	printk("finished unmarking\n");
 
 	return task_check_flag(it, DEADLOCKED);
 }
 
-static void compute_dep_tentative_deadlines(struct rt_info * task) {
-	struct timespec earliest = task->deadline;
+void compute_dep_tentative_deadlines(struct rt_info * task) {
+	struct timespec earliest;
+
+	printk("computing tentative deadlines\n");
+	earliest = task->deadline;
 	task->temp_deadline = task->deadline;
 
 	while ((task = first_dep(task))) {
@@ -95,6 +119,7 @@ static void compute_dep_tentative_deadlines(struct rt_info * task) {
 		}
 		task->temp_deadline = earliest;
 	}
+	printk("done computing tentative deadlines\n");
 }
 
 struct rt_info* sched_dasa(struct list_head *head, int flags)
@@ -102,6 +127,8 @@ struct rt_info* sched_dasa(struct list_head *head, int flags)
 	int DENSITY_LIST = SCHED_LIST1;
 	int SCHEDULE_LIST = SCHED_LIST2;
 	int TENTATIVE_LIST = SCHED_LIST3;
+
+	long ivd;
 	
 	struct list_head density_list, schedule, tentative;
 
@@ -111,6 +138,7 @@ struct rt_info* sched_dasa(struct list_head *head, int flags)
 	INIT_LIST_HEAD(&schedule);
 	INIT_LIST_HEAD(&tentative);
 
+
 	// for each task in ready tasks,
 	list_for_each_entry(it, head, task_list[LOCAL_LIST]) {
 		// compute dependency list
@@ -118,25 +146,35 @@ struct rt_info* sched_dasa(struct list_head *head, int flags)
 		mark_deps_and_deadlocks(it);
 
 		// compute task's LIVD, aborting deadlocks
-		livd(it, true, flags);
+		ivd = livd(it, true, flags);
+		printk("computed ivd: %d\n", ivd);
 	}
+
 
 	list_for_each_entry(it, head, task_list[LOCAL_LIST]) {
 		// if a task is aborted or failed, return it so it can finish aborting
-		if (check_task_failure(it, flags)) return it;
+		if (check_task_failure(it, flags)) {
+			printk("returning failed task\n");
+			return it;
+		}
 
 		// initialize list heads
 		initialize_lists(it);
 
 		// add it to density list
 		list_add(&(it->task_list[DENSITY_LIST]), &density_list);
+		printk("added task with ivd %d to density list\n", it->local_ivd);
 	}
 
+
+	
+	printk("sorting tasks by VD\n");
 	// sort tasks by descending VD
-	list_sort(&DENSITY_LIST, &density_list, task_cmp);
+	list_sort((void *) &DENSITY_LIST, &density_list, task_cmp);
 
 	// for each task, by value density
 	list_for_each_entry(it, &density_list, task_list[DENSITY_LIST]) {
+		printk("copying schedule into tentative schedule\n");
 		// make a tentative copy of the schedule
 		list_copy(&schedule, SCHEDULE_LIST, &tentative, TENTATIVE_LIST);
 
@@ -146,18 +184,27 @@ struct rt_info* sched_dasa(struct list_head *head, int flags)
 		// add task and its dependents to tentative list, in
 		// deadline/dependency-order
 		for (task = it; task != NULL; task = first_dep(task)) {
-			list_del_init(&(it->task_list[TENTATIVE_LIST]));
+			printk("adding item to tentative schedule\n");
+			if (task_check_flag(task, MARKED))
+				list_del_init(&(it->task_list[TENTATIVE_LIST]));
 			list_add(&(it->task_list[TENTATIVE_LIST]), &tentative);
 		}
 
-		list_sort(&TENTATIVE_LIST, &tentative, task_cmp);
+		list_sort((void *) &TENTATIVE_LIST, &tentative, task_cmp);
 		
 		// if the tentative schedule is feasible, copy it to the final schedule
 		if (schedule_feasible(&tentative, TENTATIVE_LIST)) {
 			list_copy(&tentative, TENTATIVE_LIST, &schedule, SCHEDULE_LIST);
-			list_sort(&SCHEDULE_LIST, &schedule, task_cmp);
+			list_sort((void *) &SCHEDULE_LIST, &schedule, task_cmp);
+			list_for_each_entry(task, &schedule, task_list[SCHEDULE_LIST]) {
+				task_set_flag(task, MARKED);
+			}
 		}
 
+	}
+
+	list_for_each_entry(task, &schedule, task_list[SCHEDULE_LIST]) {
+		task_clear_flag(task, MARKED);
 	}
 	
 	// If we ended up with an empty schedule, it means that
@@ -173,7 +220,6 @@ struct rt_info* sched_dasa(struct list_head *head, int flags)
 		return list_first_entry(&schedule,
 					struct rt_info,
 					task_list[SCHEDULE_LIST]);
-
 }
 
 struct rt_sched_local dasa = {
