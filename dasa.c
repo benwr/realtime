@@ -124,6 +124,7 @@ void compute_dep_tentative_deadlines(struct rt_info * task) {
 
 struct rt_info* sched_dasa(struct list_head *head, int flags)
 {
+	printk("Beginning scheduler\n");
 	int DENSITY_LIST = SCHED_LIST1;
 	int SCHEDULE_LIST = SCHED_LIST2;
 	int TENTATIVE_LIST = SCHED_LIST3;
@@ -213,13 +214,12 @@ struct rt_info* sched_dasa(struct list_head *head, int flags)
 	// Otherwise, do what DASA is supposed to do (return the first
 	// thing in the schedule)
 	if (list_empty(&schedule))
-		return list_first_entry(&density_list,
-					struct rt_info,
-					 task_list[DENSITY_LIST]);
+		 it = list_first_entry(&density_list, struct rt_info, task_list[DENSITY_LIST]);
 	else
-		return list_first_entry(&schedule,
-					struct rt_info,
-					task_list[SCHEDULE_LIST]);
+		 it = list_first_entry(&schedule, struct rt_info, task_list[SCHEDULE_LIST]);
+
+	while (it->dep != NULL) it = it->dep;
+	return it;
 }
 
 struct rt_sched_local dasa = {
